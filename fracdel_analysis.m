@@ -1,21 +1,22 @@
 clc; clear;
 
-L = 40;     % длина фильтра (количество отсчетов) - любое значение, кратное
-            % 20 и не меньше 40
-T = 1e-6;   % длительность символа
+L = 40;     % длина фильтра (количество отсчетов) - не меньше 40
 Fs = 1e7;   % частота дискретизации 
-sps = Fs*T; % число отсчетов на символ
+sps = 10; % число отсчетов на символ
+T = sps/Fs;   % длительность символа
 Ts = 1/Fs;  % период дискретизации
 beta = 0.9; % степень сглаживания
 
-M = 2; % Число бит на символ
+M = 4; % Число бит на символ
 
 modOrder = 2^M; % Порядок модуляции
 
-snr(:,1) = [-10:0.5:25]; % Вектор ОСШ
-eyeSNR = 30; % ОСШ для построения глазковых диаграмм
+dataConstell = randi([0 1], 500, M); % Случайная последовательность бит для построения сигнальных созвездий
+delays(:,1) = [0:0.025:0.5]; % Вектор задержек для построения сигнальных созвездий
+constSNR = 1000; % ОСШ для построения сигнальных созвездий
 
-data = randi([0 1], 5000, M); % Случайная последовательность бит
+snr(:,1) = [-2:0.5:30]; % Вектор ОСШ
+data = randi([0 1], 100000, M); % Случайная последовательность бит
 
 % BER без дробной задержки
 ber = [];
@@ -24,7 +25,7 @@ ber = [];
 berFir = [];
 
 % Создание фильтра дробной задержки
-hd = fdesign.fracdelay(0.5, 'n', 3);
+hd = fdesign.fracdelay(0.3, 'n', 3);
 fir = design(hd, 'lagrange');
 
 % Вычисление импульсной характеристики фильтра Найквиста
@@ -41,35 +42,23 @@ for n = 1:length(snr)
 end
 
 figure(1); 
-plot(snr, log(ber));
+semilogy(snr, ber);
 hold on; 
 grid on; axis('tight'); 
 xlabel('SNR'); ylabel('BER'); title('Without Fractional Delay');
 hold off;
 
 figure(2); 
-plot(snr, log(berFir));
+semilogy(snr, berFir);
 hold on;
 grid on; axis('tight'); 
 xlabel('SNR'); ylabel('BER'); title('With Fractional Delay');
 hold off;
 
-% Построение глазковых диаграмм с BPSK-модулированным сигналом,
-% сглаженным фильтром Найквиста
-dataSym = bi2de(data);
-data2 = qammod(dataSym, modOrder, 'UnitAveragePower' , true);
-
-output2 = upsample(data2, sps);
-output2 = awgn(output2, eyeSNR, 'measured');
-
-data3 = filter(fir, output2);
-
-y2 = conv(h, output2);
-y3 = conv(h, data3);
-
-eyediagram(y2, 2*sps); title('Without Fractional Delay'); % Без дробной задержки
-eyediagram(y3, 2*sps); title('With Fractional Delay'); % С дробной задержкой
-
+% Построение сигнальных созвездий
+for n = 1:length(delays)
+    plotConstellDiag(dataConstell, delays(n), modOrder, sps, constSNR, h);
+end
 
 function [ber] = calcBER(snr, data, modOrder, fir, h, sps, M, L)
     dataSym = bi2de(data);
@@ -85,21 +74,37 @@ function [ber] = calcBER(snr, data, modOrder, fir, h, sps, M, L)
     end
     
     demodData = qamdemod(signal, modOrder, 'UnitAveragePower' , true);
-    demodData = downsample(demodData, sps);
     
-    dataOut = de2bi(demodData, M);
-    
-    % При свертке с импульсной характеристикой добавляются лишние биты в
-    % начало и конец, убираем их
     rightDataOut=[];
     
-    numExtraBits = L/20;
-    
-    for j = 1:M
-        for i = (numExtraBits + 1):(length(dataOut) - numExtraBits)
-            rightDataOut(i - numExtraBits, j) = dataOut(i, j);
-        end
+    numExtraSamples = ceil(L/2);
+    for i = (numExtraSamples + 1):(length(demodData) - numExtraSamples)
+        rightDataOut(i -  numExtraSamples) = demodData(i);
     end
     
-    [nErrors, ber] = biterr(data, rightDataOut);
+    demodData = downsample(rightDataOut, sps);
+
+    dataOut = de2bi(demodData, M);
+    
+    [nErrors, ber] = biterr(data, dataOut);
+end
+
+function [ber] = plotConstellDiag(data, delay, modOrder, sps, constSNR, h)
+    dataSym = bi2de(data);
+    modData = qammod(dataSym, modOrder, 'UnitAveragePower' , true);
+
+    output = upsample(modData, sps);
+    
+    signal = conv(h, output);
+    signal = awgn(signal, constSNR, 'measured');
+    
+    hd = fdesign.fracdelay(delay, 'n', 3);
+    fir = design(hd, 'lagrange', 'FilterStructure', 'farrowfd');
+
+    delSignal = filter(fir, signal);
+
+    fig = scatterplot(delSignal, sps);
+    
+    ax = fig.CurrentAxes;
+    title(ax, 'Delay: ', delay);
 end
