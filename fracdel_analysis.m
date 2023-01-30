@@ -12,47 +12,35 @@ M = 4; % Число бит на символ
 modOrder = 2^M; % Порядок модуляции
 
 dataConstell = randi([0 1], 500, M); % Случайная последовательность бит для построения сигнальных созвездий
-delays(:,1) = [0:0.025:0.5]; % Вектор задержек для построения сигнальных созвездий
 constSNR = 1000; % ОСШ для построения сигнальных созвездий
 
-snr(:,1) = [-2:0.5:30]; % Вектор ОСШ
-data = randi([0 1], 100000, M); % Случайная последовательность бит
+delays(:,1) = [0:0.15:0.75]; % Вектор задержек
 
-% BER без дробной задержки
+snr(:,1) = [-2:0.25:25]; % Вектор ОСШ
+data = randi([0 1], 50000, M); % Случайная последовательность бит
+
+% BER
 ber = [];
-
-% BER с дробной задержкой
-berFir = [];
-
-% Создание фильтра дробной задержки
-hd = fdesign.fracdelay(0.3, 'n', 3);
-fir = design(hd, 'lagrange');
 
 % Вычисление импульсной характеристики фильтра Найквиста
 h(:,1) = createH(L, Ts, T, beta);
 
-% Рассчет BER без дробной задержки
-for n = 1:length(snr)
-    ber(n,1) = calcBER(snr(n), data, modOrder, 0, h, sps, M, L);
-end
-
 % Рассчет BER с дробной задержкой
-for n = 1:length(snr)
-    berFir(n,1) = calcBER(snr(n), data, modOrder, fir, h, sps, M, L);
+for i = 1:length(delays)
+    for n = 1:length(snr)
+        ber(n, i) = calcBER(snr(n), data, modOrder, h, sps, M, L, delays(i));
+    end
 end
 
-figure(1); 
-semilogy(snr, ber);
-hold on; 
-grid on; axis('tight'); 
-xlabel('SNR'); ylabel('BER'); title('Without Fractional Delay');
-hold off;
+legendStrings = "Delay = " + string(delays);
 
-figure(2); 
-semilogy(snr, berFir);
-hold on;
-grid on; axis('tight'); 
-xlabel('SNR'); ylabel('BER'); title('With Fractional Delay');
+% Построение графиков BER для разных величин дробной задержки
+for i = 1:length(delays)
+    semilogy(snr, ber(:, i));
+    hold on; 
+    grid on; axis('tight'); 
+    xlabel('SNR'); ylabel('BER'); legend(legendStrings);
+end
 hold off;
 
 % Построение сигнальных созвездий
@@ -60,18 +48,8 @@ for n = 1:length(delays)
     plotConstellDiag(dataConstell, delays(n), modOrder, sps, constSNR, h);
 end
 
-function [ber] = calcBER(snr, data, modOrder, fir, h, sps, M, L)
-    dataSym = bi2de(data);
-    modData = qammod(dataSym, modOrder, 'UnitAveragePower' , true);
-  
-    output = upsample(modData, sps);
-    
-    signal = conv(h, output);
-    signal = awgn(signal, snr, 'measured');
-    
-    if(fir ~= 0)
-        signal = filter(fir, signal);
-    end
+function [ber] = calcBER(snr, data, modOrder, h, sps, M, L, delay)
+    signal = createSignal(snr, data, modOrder, h, delay, sps);
     
     demodData = qamdemod(signal, modOrder, 'UnitAveragePower' , true);
     
@@ -90,18 +68,7 @@ function [ber] = calcBER(snr, data, modOrder, fir, h, sps, M, L)
 end
 
 function [ber] = plotConstellDiag(data, delay, modOrder, sps, constSNR, h)
-    dataSym = bi2de(data);
-    modData = qammod(dataSym, modOrder, 'UnitAveragePower' , true);
-
-    output = upsample(modData, sps);
-    
-    signal = conv(h, output);
-    signal = awgn(signal, constSNR, 'measured');
-    
-    hd = fdesign.fracdelay(delay, 'n', 3);
-    fir = design(hd, 'lagrange', 'FilterStructure', 'farrowfd');
-
-    delSignal = filter(fir, signal);
+    delSignal = createSignal(constSNR, data, modOrder, h, delay, sps);
 
     fig = scatterplot(delSignal, sps);
     
