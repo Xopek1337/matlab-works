@@ -1,8 +1,8 @@
 clc; clear;
 
-L = 40;     % длина фильтра (количество отсчетов) - не меньше 40
 Fs = 1e7;   % частота дискретизации 
 sps = 10; % число отсчетов на символ
+L = sps * 3; % длина фильтра (количество отсчетов)
 T = sps/Fs;   % длительность символа
 Ts = 1/Fs;  % период дискретизации
 beta = 0.9; % степень сглаживания
@@ -17,7 +17,7 @@ constSNR = 1000; % ОСШ для построения сигнальных со�
 delays(:,1) = [0:0.15:0.75]; % Вектор задержек
 
 snr(:,1) = [-2:0.25:25]; % Вектор ОСШ
-data = randi([0 1], 50000, M); % Случайная последовательность бит
+data = randi([0 1], 100000, M); % Случайная последовательность бит
 
 % BER
 ber = [];
@@ -35,6 +35,7 @@ end
 legendStrings = "Delay = " + string(delays);
 
 % Построение графиков BER для разных величин дробной задержки
+figure(1);
 for i = 1:length(delays)
     semilogy(snr, ber(:, i));
     hold on; 
@@ -45,33 +46,38 @@ hold off;
 
 % Построение сигнальных созвездий
 for n = 1:length(delays)
-    plotConstellDiag(dataConstell, delays(n), modOrder, sps, constSNR, h);
+    figure(n+1);
+    plotConstellDiag(dataConstell, delays(n), modOrder, sps, constSNR, h, L);
 end
 
 function [ber] = calcBER(snr, data, modOrder, h, sps, M, L, delay)
     signal = createSignal(snr, data, modOrder, h, delay, sps);
     
-    demodData = qamdemod(signal, modOrder, 'UnitAveragePower' , true);
-    
-    rightDataOut=[];
-    
     numExtraSamples = ceil(L/2);
-    for i = (numExtraSamples + 1):(length(demodData) - numExtraSamples)
-        rightDataOut(i -  numExtraSamples) = demodData(i);
+    for i = (numExtraSamples + 1):(length(signal) - numExtraSamples)
+        rightDataOut(i -  numExtraSamples) = signal(i);
     end
     
-    demodData = downsample(rightDataOut, sps);
-
+    signal = downsample(rightDataOut, sps);
+    
+    demodData = qamdemod(signal, modOrder, 'UnitAveragePower' , true);
+    
     dataOut = de2bi(demodData, M);
     
     [nErrors, ber] = biterr(data, dataOut);
 end
 
-function [ber] = plotConstellDiag(data, delay, modOrder, sps, constSNR, h)
+function [ber] = plotConstellDiag(data, delay, modOrder, sps, constSNR, h, L)
     delSignal = createSignal(constSNR, data, modOrder, h, delay, sps);
-
-    fig = scatterplot(delSignal, sps);
     
-    ax = fig.CurrentAxes;
-    title(ax, 'Delay: ', delay);
+    numExtraSamples = ceil(L/2);
+    for i = (numExtraSamples + 1):(length(delSignal) - numExtraSamples)
+        rightDataOut(i -  numExtraSamples) = delSignal(i);
+    end
+    
+    signal = downsample(rightDataOut, sps);
+    
+    plot(signal, '.');
+    
+    title('Delay: ', delay);
 end
