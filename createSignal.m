@@ -5,12 +5,13 @@ function [signal] = createSignal(snr, data, modOrder, h, delay, sps)
     output = upsample(modData, sps);
     
     signal = conv(h, output);
-    signal = awgn(signal, snr, 'measured');
-    
+    varSignal = var(signal);
+
     hd = fdesign.fracdelay(delay, 'n', 3);
     fir = design(hd, 'lagrange', 'FilterStructure', 'farrowfd');
     
-    if(delay ~= 0)
-        signal = filter(fir, signal);
-    end
+    signal = filter(fir, signal);
+
+    varNoise = varSignal*10^(-snr/10);
+    signal = signal+sqrt(varNoise/2)*(randn(size(signal))+1i*randn(size(signal)) );
 end
