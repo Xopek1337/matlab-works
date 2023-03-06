@@ -1,11 +1,12 @@
 clc; clear;
+close all
 
 Fs = 1e7;   % частота дискретизации 
 sps = 10; % число отсчетов на символ
-L = sps * 3; % длина фильтра (количество отсчетов)
+L = 71; % длина фильтра (количество отсчетов)
 T = sps/Fs;   % длительность символа
 Ts = 1/Fs;  % период дискретизации
-beta = 0.9; % степень сглаживания
+beta = 1; % степень сглаживания
 
 M = 4; % Число бит на символ
 
@@ -14,13 +15,14 @@ modOrder = 2^M; % Порядок модуляции
 dataConstell = randi([0 1], 500, M); % Случайная последовательность бит для построения сигнальных созвездий
 constSNR = 1000; % ОСШ для построения сигнальных созвездий
 
-delays(:,1) = [0:0.15:0.75]; % Вектор задержек
+delays(:,1) = (0.0:0.1:0.9); % Вектор задержек
+snr(:,1) = (0:1:15); % Вектор ОСШ
 
-snr(:,1) = [-2:0.25:25]; % Вектор ОСШ
-data = randi([0 1], 100000, M); % Случайная последовательность бит
+nBits = 10000;
+nRealiz = 20;
 
 % BER
-ber = [];
+nErr = zeros(length(snr),length(delays),nRealiz);
 
 % Вычисление импульсной характеристики фильтра Найквиста
 h(:,1) = createH(L, Ts, T, beta);
@@ -28,9 +30,13 @@ h(:,1) = createH(L, Ts, T, beta);
 % Рассчет BER с дробной задержкой
 for i = 1:length(delays)
     for n = 1:length(snr)
-        ber(n, i) = calcBER(snr(n), data, modOrder, h, sps, M, L, delays(i));
+        for iRealiz = 1:nRealiz
+            data = randi([0 1], nBits, M); % Случайная последовательность бит
+            nErr(n, i, iRealiz) = calcBER(snr(n), data, modOrder, h, sps, M, L, delays(i));
+        end
     end
 end
+ber = sum(nErr,3)./(nRealiz*nBits);
 
 legendStrings = "Delay = " + string(delays);
 
@@ -50,30 +56,31 @@ for n = 1:length(delays)
     plotConstellDiag(dataConstell, delays(n), modOrder, sps, constSNR, h, L);
 end
 
-function [ber] = calcBER(snr, data, modOrder, h, sps, M, L, delay)
+function [nErrors] = calcBER(snr, data, modOrder, h, sps, M, L, delay)
+    data(1:7) = [1 0 1 0 1 1 1];
     signal = createSignal(snr, data, modOrder, h, delay, sps);
-    
-    numExtraSamples = ceil(L/2);
-    for i = (numExtraSamples + 1):(length(signal) - numExtraSamples)
-        rightDataOut(i -  numExtraSamples) = signal(i);
-    end
-    
+
+    rightDataOut = signal( (L+1)/2+1:end );
+
     signal = downsample(rightDataOut, sps);
-    
-    demodData = qamdemod(signal, modOrder, 'UnitAveragePower' , true);
+
+    demodData = qamdemod(signal(1:length(data)), modOrder, 'UnitAveragePower' , true);
     
     dataOut = de2bi(demodData, M);
     
-    [nErrors, ber] = biterr(data, dataOut);
+    [nErrors, ~] = biterr(data, dataOut);
+
+    if snr==250
+        figure;
+        plot(signal,'.'); grid on
+    end
+    1;
 end
 
 function [ber] = plotConstellDiag(data, delay, modOrder, sps, constSNR, h, L)
     delSignal = createSignal(constSNR, data, modOrder, h, delay, sps);
     
-    numExtraSamples = ceil(L/2);
-    for i = (numExtraSamples + 1):(length(delSignal) - numExtraSamples)
-        rightDataOut(i -  numExtraSamples) = delSignal(i);
-    end
+    rightDataOut = delSignal( (L+1)/2+1:end );
     
     signal = downsample(rightDataOut, sps);
     
