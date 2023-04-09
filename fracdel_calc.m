@@ -2,7 +2,7 @@ clc; clear;
 close all
 
 Fs = 1e7;   % частота дискретизации 
-sps = 10; % число отсчетов на символ
+sps = 7; % число отсчетов на символ
 L = 71; % длина фильтра (количество отсчетов)
 T = sps/Fs;   % длительность символа
 Ts = 1/Fs;  % период дискретизации
@@ -14,9 +14,9 @@ modOrder = 2^M; % Порядок модуляции
 
 numVars = 5; % Количество точек для построения параболы
 
-snr(:,1) = (0:0.5:40); % Вектор ОСШ
+snr(:,1) = (-5:0.5:45); % Вектор ОСШ
 
-delay = 0.7;
+delay = 0.4;
 
 data = [1,0,1,0,1,1,0,0,1,1,0,1,1,1,0,1,1,0,1,0,0,1,0,0,1,1,1,0,0,0,1,0,1,1,1,1,0,0,1,0,1,0,0,0,1,1,0,0,0,0,1,0,0,0,0,0,1,1,1,1,1,1,0];
 data = qammod(data, modOrder, 'UnitAveragePower' , true);
@@ -33,9 +33,14 @@ fir = design(hd, 'lagrange', 'FilterStructure', 'farrowfd');
 
 ard=[];
 ard2=[];
+quad=[];
+quad2=[];
+ccf=[];
+np=[];
+y=[];
 
 for i = 1:length(snr)
-    for j = 1:1000
+    for j = 1:10000
         signal2 = noiseSignal(signal, fir, varSignal, snr(i));
 
         [ccf, lags] = xcorr(output, signal2);
@@ -44,8 +49,11 @@ for i = 1:length(snr)
 
         [del, np, y] = calcDelayMMSE(ccf, numVars, ind, sps);
 
-        ard(i, j) = del;
-        ard2(i, j) = calcDelayPrecise(abs(ccf), ind);
+        ard(i, j) = abs(del - delay);
+        ard2(i, j) = abs(calcDelayPrecise(abs(ccf), ind) - delay);
+        
+        quad(i, j) = (del - delay)^2;
+        quad2(i, j) = (calcDelayPrecise(abs(ccf), ind) - delay)^2;
     end
 end
 
@@ -58,17 +66,31 @@ hold off;
 
 errMMSE=[];
 errPrecise=[];
+dispers=[];
+dispers2=[];
 
 for i = 1:length(snr)
-    errMMSE(i) = abs((sum(ard(i,:))/length(ard(i,:))) - delay);
-    errPrecise(i) = abs((sum(ard2(i,:))/length(ard2(i,:))) - delay);
+    errMMSE(i) = sum(ard(i,:))/length(ard(i,:));
+    errPrecise(i) = sum(ard2(i,:))/length(ard2(i,:));
+    
+    dispers(i) = (sum(quad(i,:))/length(quad(i,:))) - (sum(ard(i,:))/length(ard(i,:)))^2;
+    dispers2(i) = (sum(quad2(i,:))/length(quad2(i,:))) - (sum(ard2(i,:))/length(ard2(i,:)))^2;
 end
 
 figure(2);
-plot(snr, errMMSE); xlabel('SNR'); ylabel('Error');
+plot(snr, errMMSE); xlabel('SNR'); ylabel('Mean error');
 hold on;
 plot(snr, errPrecise);
 legend('MMSE', 'precise');
+grid on;
+hold off;
+
+figure(3);
+plot(snr, sqrt(dispers)); xlabel('SNR'); ylabel('Mean square deviation');
+hold on;
+plot(snr, sqrt(dispers2));
+legend('MMSE', 'precise');
+grid on;
 hold off;
 
 function [del, np, y] = calcDelayMMSE(ccf, numVars, ind, sps)
